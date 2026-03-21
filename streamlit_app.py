@@ -175,14 +175,27 @@ def start_bot_thread():
                     
                     diff = pred_price - candle_close_price
                     signal = 'WAIT'
-                    THRESHOLD = 50.0 # Увеличен порог: игнорируем мелкий шум, ждем сильных движений
+                    THRESHOLD = 150.0 # Сильно увеличен порог (ждем пробоя в 150$)
                     
                     if diff > THRESHOLD: 
                         signal = 'BUY'
-                        execute_trade('LONG', candle_close_price)
+                        # Фильтр тренда: покупаем только если текущая цена выше средней за последние 5 минут
+                        if len(state['plot_real_prices']) > 5:
+                            sma5 = sum(list(state['plot_real_prices'])[-5:]) / 5
+                            if candle_close_price < sma5:
+                                signal = 'WAIT' # Игнорируем лонг на падающем тренде
+                        
+                        if signal == 'BUY': execute_trade('LONG', candle_close_price)
+                        
                     elif diff < -THRESHOLD: 
                         signal = 'SELL'
-                        execute_trade('SHORT', candle_close_price)
+                        # Фильтр тренда: продаем только если текущая цена ниже средней за последние 5 минут
+                        if len(state['plot_real_prices']) > 5:
+                            sma5 = sum(list(state['plot_real_prices'])[-5:]) / 5
+                            if candle_close_price > sma5:
+                                signal = 'WAIT' # Игнорируем шорт на растущем тренде
+                                
+                        if signal == 'SELL': execute_trade('SHORT', candle_close_price)
                     
                     state['plot_real_prices'].append(candle_close_price)
                     state['plot_pred_prices'].append(pred_price)
