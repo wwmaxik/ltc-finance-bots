@@ -29,6 +29,10 @@ MAX_POINTS_ON_PLOT = 50
 LEARNING_RATE = 0.002
 MODEL_PATH = f"ltc_trader_model_{TIME_WINDOW_MINUTES}m.pth"
 
+# Симуляция торговли
+PAPER_BALANCE = 1000.0 # Стартовый баланс
+TRADE_AMOUNT = 1000.0  # Сумма каждой сделки
+
 class RealtimeLTC(nn.Module):
     def __init__(self):
         super().__init__()
@@ -55,7 +59,13 @@ def start_bot_thread():
         'latest_price': 0.0,
         'latest_pred': 0.0,
         'loss': 0.0,
-        'progress': 0
+        'progress': 0,
+        # Данные симуляции
+        'balance': PAPER_BALANCE,
+        'position': 'NONE',
+        'entry_price': 0.0,
+        'unrealized_pnl': 0.0,
+        'trades_count': 0
     }
     
     model = RealtimeLTC()
@@ -85,6 +95,28 @@ def start_bot_thread():
         except Exception as e:
             state['status'] = f"❌ Ошибка: {e}"
 
+    def execute_trade(action, price):
+        # Если позиция уже открыта в этом направлении
+        if state['position'] == action:
+            return
+            
+        fee_rate = 0.001 # 0.1% комиссия Binance
+
+        # Закрываем старую позицию
+        if state['position'] != 'NONE':
+            if state['position'] == 'LONG':
+                profit_pct = (price - state['entry_price']) / state['entry_price']
+            elif state['position'] == 'SHORT':
+                profit_pct = (state['entry_price'] - price) / state['entry_price']
+                
+            state['balance'] += (TRADE_AMOUNT * profit_pct) - (TRADE_AMOUNT * fee_rate)
+
+        # Открываем новую
+        state['position'] = action
+        state['entry_price'] = price
+        state['balance'] -= (TRADE_AMOUNT * fee_rate)
+        state['trades_count'] += 1
+
     def on_message(ws, message):
         try:
             data = json.loads(message)
@@ -93,6 +125,14 @@ def start_bot_thread():
             
             state['latest_price'] = current_price
             state['current_candle_prices'].append(current_price)
+            
+            # Живой PnL (нереализованная прибыль открытой сделки)
+            if state['position'] == 'LONG':
+                state['unrealized_pnl'] = (current_price - state['entry_price']) / state['entry_price'] * TRADE_AMOUNT
+            elif state['position'] == 'SHORT':
+                state['unrealized_pnl'] = (state['entry_price'] - current_price) / state['entry_price'] * TRADE_AMOUNT
+            else:
+                state['unrealized_pnl'] = 0.0
             
             if state['last_process_time'] == 0:
                 state['last_process_time'] = current_time
@@ -137,8 +177,12 @@ def start_bot_thread():
                     signal = 'WAIT'
                     THRESHOLD = 7.0 # FEE(2.0) + PROFIT(5.0)
                     
-                    if diff > THRESHOLD: signal = 'BUY'
-                    elif diff < -THRESHOLD: signal = 'SELL'
+                    if diff > THRESHOLD: 
+                        signal = 'BUY'
+                        execute_trade('LONG', candle_close_price)
+                    elif diff < -THRESHOLD: 
+                        signal = 'SELL'
+                        execute_trade('SHORT', candle_close_price)
                     
                     state['plot_real_prices'].append(candle_close_price)
                     state['plot_pred_prices'].append(pred_price)
@@ -146,7 +190,7 @@ def start_bot_thread():
                     current_hh_mm_ss = time.strftime('%H:%M:%S')
                     state['plot_times'].append(current_hh_mm_ss)
                     
-                    state['status'] = f"🟢 Свеча закрыта в {current_hh_mm_ss}. Модель обновлена."
+                    state['status'] = f"🟢 Свеча закрыта в {current_hh_mm_ss}."
             else:
                 state['progress'] = int((elapsed_time / TIME_WINDOW_SEC) * 100)
                 state['status'] = f"⏳ Сбор свечи... {state['progress']}%"
@@ -176,9 +220,30 @@ state = start_bot_thread()
 st.title("🧠 Liquid Time-Constant (LTC) Trading Bot")
 st.markdown(f"**Таймфрейм:** {TIME_WINDOW_MINUTES} минут | **Нейронов:** {NEURONS}")
 
-# --- МЕТРИКИ ---
+# --- БАЛАНС И ТОРГОВЛЯ ---
+st.subheader("💼 Симуляция торговли (Paper Trading)")
+tc1, tc2, tc3, tc4 = st.columns(4)
+
+total_equity = state['balance'] + state['unrealized_pnl']
+profit_loss = total_equity - PAPER_BALANCE
+
+tc1.metric("Доступный баланс", f"${state['balance']:.2f}")
+tc2.metric("Нереализованный PnL", f"${state['unrealized_pnl']:.2f}")
+tc3.metric("Общий капитал", f"${total_equity:.2f}", f"{profit_loss:+.2f}")
+
+pos_color = "gray"
+if state['position'] == 'LONG': pos_color = "green"
+elif state['position'] == 'SHORT': pos_color = "red"
+
+tc4.markdown(f"**Открытая позиция:** <span style='color:{pos_color}; font-weight:bold;'>{state['position']}</span> (Сделок: {state['trades_count']})", unsafe_allow_html=True)
+if state['position'] != 'NONE':
+    tc4.markdown(f"**Цена входа:** ${state['entry_price']:.2f}")
+
+
+# --- МЕТРИКИ НЕЙРОСЕТИ ---
+st.divider()
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Текущая цена", f"${state['latest_price']:.2f}")
+col1.metric("Текущая цена BTC", f"${state['latest_price']:.2f}")
 
 diff = state['latest_pred'] - state['latest_price'] if state['latest_pred'] else 0
 col2.metric("Прогноз LTC", f"${state['latest_pred']:.2f}", f"{diff:+.2f}")
