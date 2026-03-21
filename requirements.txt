@@ -1,0 +1,8 @@
+torch
+ncps
+scikit-learn
+matplotlib
+websocket-client
+requests
+streamlit
+pandas
