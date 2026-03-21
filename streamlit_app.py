@@ -26,7 +26,7 @@ TIME_WINDOW_SEC = TIME_WINDOW_MINUTES * 60.0
 NEURONS = 64
 SEQ_LENGTH = 50
 MAX_POINTS_ON_PLOT = 50
-LEARNING_RATE = 0.002
+LEARNING_RATE = 0.0005
 MODEL_PATH = f"ltc_trader_model_{TIME_WINDOW_MINUTES}m.pth"
 
 # Симуляция торговли
@@ -175,7 +175,7 @@ def start_bot_thread():
                     
                     diff = pred_price - candle_close_price
                     signal = 'WAIT'
-                    THRESHOLD = 7.0 # FEE(2.0) + PROFIT(5.0)
+                    THRESHOLD = 50.0 # Увеличен порог: игнорируем мелкий шум, ждем сильных движений
                     
                     if diff > THRESHOLD: 
                         signal = 'BUY'
