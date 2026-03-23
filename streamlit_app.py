@@ -246,6 +246,13 @@ init_session_state()
 poll_new_data()
 update_pnl()
 
+progress = 0
+if st.session_state.last_candle_time > 0:
+    elapsed = time.time() - st.session_state.last_candle_time
+    progress = min(int((elapsed / 3600) * 100), 99)
+    if progress == 0 and elapsed > 60:
+        progress = 1
+
 st.sidebar.title("⚙️ Управление")
 st.session_state.learning_rate = st.sidebar.number_input("LR", 0.0001, 0.1, st.session_state.learning_rate, 0.0001, "%.4f")
 st.session_state.threshold = st.sidebar.number_input("Порог (USD)", 1.0, 1000.0, st.session_state.threshold, 5.0)
@@ -283,6 +290,8 @@ m3.metric("Прогноз", f"${st.session_state.latest_pred:.2f}", f"{st.sessio
 m4.metric("Loss", f"{st.session_state.loss:.6f}")
 
 st.caption(f"**Статус:** {st.session_state.status}")
+st.progress(progress / 100, text=f"⏳ Сбор свечи... {progress}%")
+
 with st.expander("🔧 Debug"):
     st.text(f"API: {st.session_state.get('api_status', 'N/A')}")
     st.text(f"Error: {st.session_state.get('api_error', 'N/A')}")
