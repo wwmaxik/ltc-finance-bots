@@ -6,3 +6,4 @@ websocket-client
 requests
 streamlit
 pandas
+pandas-ta
