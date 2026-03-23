@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="LTC Pro Bot", page_icon="🤖", layout="wide")
 
-TIME_WINDOW_MINUTES = 1.0
+TIME_WINDOW_MINUTES = 60
 NUM_FEATURES = 2
 NEURONS = 32
 SEQ_LENGTH = 50
@@ -78,23 +78,22 @@ def init_session_state():
         load_initial_data()
 
 def load_initial_data():
-    url = f"https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval={int(TIME_WINDOW_MINUTES)}m&limit={SEQ_LENGTH+1}"
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    url = f"https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=1"
     try:
-        response = requests.get(url, timeout=15, headers=headers)
-        st.session_state.api_status = f"API: {response.status_code}"
+        response = requests.get(url, timeout=15)
+        st.session_state.api_status = f"CoinGecko: {response.status_code}"
         if response.status_code == 200:
             data = response.json()
             for kline in data:
-                close_price = float(kline[4])
-                volume = float(kline[5])
+                timestamp, open_, high, low, close_price = kline
+                volume = 0.0
                 scaled = st.session_state.scaler.transform([[close_price, volume]])[0]
                 st.session_state.price_history.append([scaled[0], scaled[1]])
                 st.session_state.volume_history.append(volume)
                 st.session_state.plot_real_prices.append(close_price)
                 st.session_state.plot_pred_prices.append(0)
                 st.session_state.plot_signals.append('WAIT')
-                st.session_state.plot_times.append(datetime.datetime.fromtimestamp(kline[0]/1000).strftime('%H:%M'))
+                st.session_state.plot_times.append(datetime.datetime.fromtimestamp(timestamp/1000).strftime('%H:%M'))
             st.session_state.last_candle_time = data[-1][0]
             st.session_state.status = f"✅ Загружено {len(st.session_state.price_history)} свечей"
         else:
@@ -104,10 +103,9 @@ def load_initial_data():
         st.session_state.api_error = str(e)[:100]
 
 def poll_new_data():
-    url = f"https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval={int(TIME_WINDOW_MINUTES)}m&limit=2"
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    url = f"https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=1"
     try:
-        response = requests.get(url, timeout=10, headers=headers)
+        response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
             last_candle_time = int(data[-1][0])
@@ -115,8 +113,8 @@ def poll_new_data():
             if last_candle_time > st.session_state.last_candle_time:
                 st.session_state.last_candle_time = last_candle_time
                 kline = data[-1]
-                close_price = float(kline[4])
-                volume = float(kline[5])
+                timestamp, open_, high, low, close_price = kline
+                volume = 0.0
                 
                 scaled = st.session_state.scaler.transform([[close_price, volume]])[0]
                 st.session_state.price_history.append([scaled[0], scaled[1]])
@@ -129,7 +127,7 @@ def poll_new_data():
                 if len(st.session_state.price_history) == SEQ_LENGTH + 1:
                     train_model(close_price, volume, kline)
     except Exception as e:
-        st.session_state.status = f"⚠️ {e}"
+        pass
 
 def train_model(close_price, volume, kline):
     for pg in st.session_state.optimizer.param_groups:
@@ -224,11 +222,10 @@ def execute_trade(action, price):
 def update_pnl():
     if st.session_state.position != 'NONE':
         try:
-            url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(url, timeout=5, headers=headers)
+            url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+            response = requests.get(url, timeout=5)
             if response.status_code == 200:
-                current_price = float(response.json()['price'])
+                current_price = response.json()['bitcoin']['usd']
                 if st.session_state.position == 'LONG':
                     st.session_state.unrealized_pnl = (current_price - st.session_state.entry_price) / st.session_state.entry_price * st.session_state.trade_amount
                 elif st.session_state.position == 'SHORT':
@@ -260,7 +257,7 @@ uptime = int(time.time() - st.session_state.start_time)
 st.sidebar.metric("⏱ Аптайм", str(datetime.timedelta(seconds=uptime)))
 
 st.title("🤖 LTC Pro Trading Bot")
-st.markdown(f"**{TIME_WINDOW_MINUTES}м** | Нейроны: {NEURONS} | Фичи: price + volume")
+st.markdown(f"**{TIME_WINDOW_MINUTES//60}ч** | Нейроны: {NEURONS} | Фичи: price")
 
 c1, c2, c3, c4 = st.columns(4)
 total_equity = st.session_state.balance + st.session_state.unrealized_pnl
