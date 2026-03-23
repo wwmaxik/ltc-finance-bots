@@ -79,8 +79,10 @@ def init_session_state():
 
 def load_initial_data():
     url = f"https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval={int(TIME_WINDOW_MINUTES)}m&limit={SEQ_LENGTH+1}"
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=15, headers=headers)
+        st.session_state.api_status = f"API: {response.status_code}"
         if response.status_code == 200:
             data = response.json()
             for kline in data:
@@ -96,14 +98,16 @@ def load_initial_data():
             st.session_state.last_candle_time = data[-1][0]
             st.session_state.status = f"✅ Загружено {len(st.session_state.price_history)} свечей"
         else:
-            st.session_state.status = "❌ Ошибка загрузки"
+            st.session_state.status = f"❌ HTTP {response.status_code}"
     except Exception as e:
-        st.session_state.status = f"❌ Ошибка: {e}"
+        st.session_state.status = f"❌ {type(e).__name__}"
+        st.session_state.api_error = str(e)[:100]
 
 def poll_new_data():
     url = f"https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval={int(TIME_WINDOW_MINUTES)}m&limit=2"
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=10, headers=headers)
         if response.status_code == 200:
             data = response.json()
             last_candle_time = int(data[-1][0])
@@ -221,7 +225,8 @@ def update_pnl():
     if st.session_state.position != 'NONE':
         try:
             url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
-            response = requests.get(url, timeout=5)
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(url, timeout=5, headers=headers)
             if response.status_code == 200:
                 current_price = float(response.json()['price'])
                 if st.session_state.position == 'LONG':
@@ -280,6 +285,10 @@ m3.metric("Прогноз", f"${st.session_state.latest_pred:.2f}", f"{st.sessio
 m4.metric("Loss", f"{st.session_state.loss:.6f}")
 
 st.caption(f"**Статус:** {st.session_state.status}")
+with st.expander("🔧 Debug"):
+    st.text(f"API: {st.session_state.get('api_status', 'N/A')}")
+    st.text(f"Error: {st.session_state.get('api_error', 'N/A')}")
+    st.text(f"Hist: {len(st.session_state.price_history)} candles")
 
 points = min(len(st.session_state.plot_real_prices), st.session_state.max_points_on_plot)
 if points > 0:
