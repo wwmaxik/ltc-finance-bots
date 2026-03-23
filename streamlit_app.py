@@ -87,7 +87,7 @@ def start_bot_thread():
     criterion = nn.MSELoss()
     
     scaler = MinMaxScaler(feature_range=(0, 1))
-    scaler.fit(np.array([[50000, 0], [100000, 1000]]))
+    scaler.fit(np.array([[60000, 0], [80000, 500]]))
     
     scalers = {
         'close': MinMaxScaler(feature_range=(0, 1)),
