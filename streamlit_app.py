@@ -78,23 +78,24 @@ def init_session_state():
         load_initial_data()
 
 def load_initial_data():
-    url = f"https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=1"
+    url = "https://min-api.cryptocompare.com/data/v2/histohour?fsym=BTC&tsym=USD&limit=50"
     try:
         response = requests.get(url, timeout=15)
-        st.session_state.api_status = f"CoinGecko: {response.status_code}"
+        st.session_state.api_status = f"CryptoCompare: {response.status_code}"
         if response.status_code == 200:
-            data = response.json()
+            data = response.json()['Data']['Data']
             for kline in data:
-                timestamp, open_, high, low, close_price = kline
-                volume = 0.0
+                close_price = kline['close']
+                volume = kline['volumefrom']
+                time_ = kline['time']
                 scaled = st.session_state.scaler.transform([[close_price, volume]])[0]
                 st.session_state.price_history.append([scaled[0], scaled[1]])
                 st.session_state.volume_history.append(volume)
                 st.session_state.plot_real_prices.append(close_price)
                 st.session_state.plot_pred_prices.append(0)
                 st.session_state.plot_signals.append('WAIT')
-                st.session_state.plot_times.append(datetime.datetime.fromtimestamp(timestamp/1000).strftime('%H:%M'))
-            st.session_state.last_candle_time = data[-1][0]
+                st.session_state.plot_times.append(datetime.datetime.fromtimestamp(time_).strftime('%H:%M'))
+            st.session_state.last_candle_time = data[-1]['time']
             st.session_state.status = f"✅ Загружено {len(st.session_state.price_history)} свечей"
         else:
             st.session_state.status = f"❌ HTTP {response.status_code}"
@@ -103,18 +104,18 @@ def load_initial_data():
         st.session_state.api_error = str(e)[:100]
 
 def poll_new_data():
-    url = f"https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=1"
+    url = "https://min-api.cryptocompare.com/data/v2/histohour?fsym=BTC&tsym=USD&limit=2"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            data = response.json()
-            last_candle_time = int(data[-1][0])
+            data = response.json()['Data']['Data']
+            last_candle = data[-1]
+            last_candle_time = int(last_candle['time'])
             
             if last_candle_time > st.session_state.last_candle_time:
                 st.session_state.last_candle_time = last_candle_time
-                kline = data[-1]
-                timestamp, open_, high, low, close_price = kline
-                volume = 0.0
+                close_price = last_candle['close']
+                volume = last_candle['volumefrom']
                 
                 scaled = st.session_state.scaler.transform([[close_price, volume]])[0]
                 st.session_state.price_history.append([scaled[0], scaled[1]])
@@ -125,7 +126,7 @@ def poll_new_data():
                     st.session_state.volume_history.pop(0)
                 
                 if len(st.session_state.price_history) == SEQ_LENGTH + 1:
-                    train_model(close_price, volume, kline)
+                    train_model(close_price, volume, last_candle)
     except Exception as e:
         pass
 
@@ -222,10 +223,10 @@ def execute_trade(action, price):
 def update_pnl():
     if st.session_state.position != 'NONE':
         try:
-            url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+            url = "https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=USD"
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
-                current_price = response.json()['bitcoin']['usd']
+                current_price = response.json()['USD']
                 if st.session_state.position == 'LONG':
                     st.session_state.unrealized_pnl = (current_price - st.session_state.entry_price) / st.session_state.entry_price * st.session_state.trade_amount
                 elif st.session_state.position == 'SHORT':
